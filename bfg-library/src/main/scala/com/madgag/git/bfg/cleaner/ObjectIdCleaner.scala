@@ -54,14 +54,11 @@ class ObjectIdCleaner(config: ObjectIdCleaner.Config, objectDB: ObjectDatabase, 
   // want to enforce that once any value is returned, it is 'good' and therefore an identity-mapped key as well
   val memo: Memo[ObjectId, ObjectId] = MemoUtil.concurrentCleanerMemo(objectProtection.fixedObjectIds)
 
-  def apply(objectId: ObjectId): ObjectId = memoClean(objectId)
+  def apply(objectId: ObjectId) = memoClean(objectId)
 
-  val memoClean = memo {
-    uncachedClean
-  }
+  val memoClean = memo(uncachedClean)
 
-
-  def uncachedClean: (ObjectId) => ObjectId = {
+  def uncachedClean: Cleaner[ObjectId] = {
     objectId =>
       objectDB.newReader.open(objectId).getType match {
         case OBJ_COMMIT => cleanCommit(objectId)
@@ -75,7 +72,7 @@ class ObjectIdCleaner(config: ObjectIdCleaner.Config, objectDB: ObjectDatabase, 
 
   def getTag(tagId: AnyObjectId): RevTag = revWalk synchronized (tagId asRevTag)
 
-  def cleanCommit(commitId: ObjectId): ObjectId = {
+  val cleanCommit: Cleaner[ObjectId] = { commitId =>
     val originalRevCommit = getCommit(commitId)
     val originalCommit = Commit(originalRevCommit)
 
@@ -93,8 +90,8 @@ class ObjectIdCleaner(config: ObjectIdCleaner.Config, objectDB: ObjectDatabase, 
     }
   }
 
-  def cleanTree(originalObjectId: ObjectId): ObjectId = {
-    val tree = Tree(originalObjectId, objectDB.newReader)
+  val cleanTree: Cleaner[ObjectId] = { treeId =>
+    val tree = Tree(treeId, objectDB.newReader)
 
     val fixedTreeBlobs = treeBlobsCleaner.fixer(new TreeBlobsCleaner.Kit(objectDB))(tree.blobs)
     val cleanedSubtrees = TreeSubtrees(tree.subtrees.entryMap.map {
@@ -117,13 +114,12 @@ class ObjectIdCleaner(config: ObjectIdCleaner.Config, objectDB: ObjectDatabase, 
 
       updatedTreeId
     } else {
-      originalObjectId
+        treeId
     }
   }
 
-  def cleanTag(id: ObjectId): ObjectId = {
-    val originalTag = getTag(id)
-
+  val cleanTag: Cleaner[ObjectId] = { tagId =>
+    val originalTag = getTag(tagId)
     replacement(originalTag.getObject).map {
       cleanedObj =>
         val tb = new TagBuilder
@@ -134,6 +130,6 @@ class ObjectIdCleaner(config: ObjectIdCleaner.Config, objectDB: ObjectDatabase, 
         val cleanedTag: ObjectId = objectDB.newInserter.insert(tb)
         objectChecker.foreach(_.checkTag(tb.toByteArray))
         cleanedTag
-    }.getOrElse(originalTag)
+      }.getOrElse(tagId)
   }
 }

@@ -180,7 +180,7 @@ object RepoRewriter {
     protection.Reporter.reportProtectedCommitsAndTheirDirt(reports, objectIdCleanerConfig)
   }
 
-  def reportTreeDirtHistory(commits: List[RevCommit], objectIdCleaner: ObjectId => ObjectId) {
+  def reportTreeDirtHistory(commits: List[RevCommit], objectIdCleaner: Cleaner[ObjectId]) {
 
     val dirtHistoryElements = math.max(20, math.min(60, commits.size))
     def cut[A](xs: Seq[A], n: Int) = {
