@@ -37,7 +37,7 @@ object Main extends App {
     // "git"
   ).map(benchmarkSuite / "repos" / _)
 
-  val bfgJars = Seq("1.4.0","1.5.0","1.6.0rc-SNAPSHOT").map(fix => Path.fromString(s"/home/roberto/bfg-demo/bfg-$fix.jar"))
+  val bfgJars = Seq("1.4.0","1.5.0","1.6.0rc-SNAPSHOT","1.6.0").map(fix => Path.fromString(s"/home/roberto/bfg-demo/bfg-$fix.jar"))
 
   val commandRegex = "(.+?)(?:==(.*))?".r
 
