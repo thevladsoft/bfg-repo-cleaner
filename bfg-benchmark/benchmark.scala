@@ -1,13 +1,13 @@
-import java.io.FileInputStream
 import java.util.concurrent.TimeUnit._
-import org.eclipse.jgit.lib.ProgressMonitor
+import scala.concurrent.duration.{Duration, FiniteDuration}
 import scala.sys.process._
 import com.madgag.compress.CompressUtil._
-import scala.util.matching.Regex
+import scalax.file.defaultfs.DefaultPath
 import scalax.file.Path
 import scalax.file.ImplicitConversions._
 import java.lang.System.nanoTime
-import scalax.io.Codec
+import scalax.file.PathMatcher.IsDirectory
+import scalax.io.{Input, Codec}
 
 object Main extends App {
 
@@ -33,58 +33,82 @@ object Main extends App {
   val repoSpecDirs = Seq(
     // "rails",
     "github-gem",
-    "jgit"
+    "wine"
+    // "jgit",
+    //"gcc"
     // "git"
   ).map(benchmarkSuite / "repos" / _)
 
-  val bfgJars = Seq("1.4.0","1.5.0","1.6.0rc-SNAPSHOT","1.6.0").map(fix => Path.fromString(s"/home/roberto/bfg-demo/bfg-$fix.jar"))
+  val bfgJars = Seq("1.4.0","1.5.0","1.6.0").map(fix => Path.fromString(s"/home/roberto/bfg-demo/bfg-$fix.jar"))
 
   val commandRegex = "(.+?)(?:==(.*))?".r
 
   repoSpecDirs.foreach { repoSpecDir =>
+    val repoName = repoSpecDir.name
 
-    (repoSpecDir / "bfg-commands.txt").lines().foreach {
-      def runBfgJobsFor(bfgParams: String) {
-        bfgJars.foreach {
-          bfgJar =>
-            val repoDir = extractRepoFrom(repoSpecDir / "repo.git.zip")
+    println(s"Repo : $repoName")
 
-            measureTask {
-              println(s"bfgJar = ${bfgJar.name} params='$bfgParams' repo=${repoSpecDir.name}")
-              s"java -jar ${bfgJar.path} $bfgParams ${repoDir.path}" !!
-            }
-        }
+    (repoSpecDir / "commands").children().filter(IsDirectory).foreach { commandDir =>
+
+      val commandName = commandDir.name
+
+      def runJobFor(typ: String, processGen: ProcessGen):Option[Duration] = {
+        val paramsPath = commandDir / s"$typ.txt"
+        val repoDir = extractRepoFrom(repoSpecDir / "repo.git.zip")
+        if (paramsPath.exists) {
+          val process = processGen.genProcess(paramsPath, repoDir)
+          Some(measureTask(s"$commandName - ${processGen.description}") {
+            process!(ProcessLogger(_ => Unit))
+          })
+        } else None
       }
 
-      def runGfbJobFor(gfbParams: String) {
-          val repoDir = extractRepoFrom(repoSpecDir / "repo.git.zip")
+      val bfgExecutions: Seq[(String, Duration)] = bfgJars.map { bfgJar =>
+        val desc = bfgJar.simpleName
+        val duration = runJobFor("bfg", new ProcessGen {
+          def genProcess(paramsInput: Input, repoPath: DefaultPath) =
+            Process(s"java -jar ${bfgJar.path} ${paramsInput.string}", repoPath)
 
-          measureTask {
-            println(s"git-filter-branch params='${gfbParams.take(20)}' repo=${repoSpecDir.name}")
-            s"git filter-branch --git-dir=${repoDir.path} $gfbParams ${repoDir.path}" !!
-          }
-      }
+          val description = desc
+        })
+        duration.map(d => desc -> d)
+      }.flatten
 
-      commandLine =>
+      val gfbDuration: Option[Duration] = runJobFor("gfb", new ProcessGen {
+        lazy val description = "git filter-branch"
+        def genProcess(paramsInput: Input, repoPath: DefaultPath) =
+          Process(Seq("git", "filter-branch") ++ paramsInput.lines(), repoPath)
+      })
 
-      commandLine match {
-        case commandRegex(bfgParams, null) => runBfgJobsFor(bfgParams)
-        case commandRegex(bfgParams, gfbParams) =>
-          runBfgJobsFor(bfgParams)
-          runGfbJobFor(gfbParams)
-      }
+      val samples = TaskExecutionSamples(bfgExecutions, gfbDuration)
+      println(samples.summary)
+
 
     }
   }
 
+  case class TaskExecutionSamples(bfgExecutions: Seq[(String, Duration)], gfbExecution: Option[Duration]) {
 
-  def measureTask[T](block: => T) = {
+    lazy val summary = {
+      bfgExecutions.map { case (name,dur) => f"$name: ${dur.toMillis}%,d ms"}.mkString(",") + gfbExecution.map {
+        gfb => " "+bfgExecutions.map { case (name,dur) => f"$name: * ${gfb/dur}%2.1f"}.mkString(",")
+      }.getOrElse("")
+    }
+  }
+
+  def measureTask[T](description: String)(block: => T): Duration = {
     val start = nanoTime
     val result = block
-    val duration = nanoTime - start
-    println("completed in %,d ms.".format(NANOSECONDS.toMillis(duration)))
-    result
+    val duration = FiniteDuration(nanoTime - start, NANOSECONDS)
+    println(s"$description completed in %,d ms.".format(duration.toMillis))
+    duration
   }
 
   case class BFGExecution(bfgJar: Path, bfgParams: Path, repoDir: Path)
+
+  trait ProcessGen {
+    val description: String
+
+    def genProcess(paramsInput: Input, repoPath: DefaultPath): ProcessBuilder
+  }
 }
