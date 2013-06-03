@@ -9,14 +9,18 @@ import java.lang.System.nanoTime
 import scalax.file.PathMatcher.IsDirectory
 import scalax.io.{Input, Codec}
 
+// benchmarkDir 1.4.0,1.5.0,1.6.0 rails,github-gem,wine
 object Main extends App {
 
   implicit val codec = Codec.UTF8
 
+  val benchmarkDir = Path.fromString(args(0))
+
+  val bfgJars = args(1).split(",").toSeq.map(version => benchmarkDir / "jars" / s"bfg-$version.jar")
+
+  val repoSpecDirs = args(2).split(",").toSeq.map(benchmarkDir / "repos" / _)
+
   val scratchDir = Path.fromString("/dev/shm/repo.git")
-
-  val benchmarkSuite = Path.fromString("/home/roberto/development/blob-fixing-git-cleaner-debugging/benchmark-suite/")
-
 
   def extractRepoFrom(zipPath: Path) = {
     val repoDir = scratchDir / "repo.git"
@@ -29,19 +33,6 @@ object Main extends App {
 
     repoDir
   }
-
-  val repoSpecDirs = Seq(
-    // "rails",
-    "github-gem",
-    "wine"
-    // "jgit",
-    //"gcc"
-    // "git"
-  ).map(benchmarkSuite / "repos" / _)
-
-  val bfgJars = Seq("1.4.0","1.5.0","1.6.0").map(fix => Path.fromString(s"/home/roberto/bfg-demo/bfg-$fix.jar"))
-
-  val commandRegex = "(.+?)(?:==(.*))?".r
 
   repoSpecDirs.foreach { repoSpecDir =>
     val repoName = repoSpecDir.name
