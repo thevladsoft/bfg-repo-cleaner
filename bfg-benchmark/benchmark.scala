@@ -81,17 +81,15 @@ object Main extends App {
       })
 
       val samples = TaskExecutionSamples(bfgExecutions, gfbDuration)
-      println(samples.summary)
-
-
+      println(s"$repoName $commandName :: ${samples.summary}")
     }
   }
 
   case class TaskExecutionSamples(bfgExecutions: Seq[(String, Duration)], gfbExecution: Option[Duration]) {
 
     lazy val summary = {
-      bfgExecutions.map { case (name,dur) => f"$name: ${dur.toMillis}%,d ms"}.mkString(",") + gfbExecution.map {
-        gfb => " "+bfgExecutions.map { case (name,dur) => f"$name: * ${gfb/dur}%2.1f"}.mkString(",")
+      bfgExecutions.map { case (name,dur) => f"$name: ${dur.toMillis}%,d ms"}.mkString(", ") + gfbExecution.map {
+        gfb => "  "+bfgExecutions.map { case (name,dur) => f"$name: ${gfb/dur}%2.1fx"}.mkString(", ")
       }.getOrElse("")
     }
   }
